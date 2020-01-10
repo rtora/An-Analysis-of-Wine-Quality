@@ -1,0 +1,188 @@
+---
+title: "122 Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Import datasets into R
+```{r}
+winequality.red <- read.csv("C:/Users/rtora/Downloads/winequality-red.csv", sep=";")
+View(winequality.red)
+```
+
+```{r}
+winequality.white <- read.csv("C:/Users/rtora/Downloads/winequality-white.csv", sep=";")
+View(winequality.white)
+```
+#Add a new column to the datasets to id red and white
+#white = 0  red = 1
+```{r}
+winequality.white$id = 0
+winequality.red$id = 1
+
+```
+#combine datasets into 1
+```{r}
+winequality = rbind(winequality.red,winequality.white)
+View(winequality)
+```
+
+```{r}
+attach(winequality)
+plot(quality[id == 1], alcohol[id == 1], col = "black", main = "quality vs alcohol content",ylab="alcohol",xlab="quality")
+points(quality[id==0],alcohol[id==0],col = "yellow")
+```
+#create a scatterplot matrix and determine correlations between predictors
+```{r}
+full_model = lm(formula = quality ~ fixed.acidity +volatile.acidity  + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + density + pH + sulphates + alcohol + id)
+pairs(winequality)
+cor(subset(winequality, select = -c(quality)))
+```
+#create a step function to determine an appropriate linear model
+
+```{r}
+library("car", lib.loc="~/R/win-library/3.6")
+vif(full_model)
+```
+#we can drop density from the predictors because it has the largest VIF
+#lets do it agian with the new predictors
+```{r}
+vif(lm(formula = quality ~ fixed.acidity +volatile.acidity  + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide  + pH + sulphates + alcohol + id))
+```
+#we can drop id from predictors because it is over 5
+#let's do it again
+```{r}
+vif(lm(formula = quality ~ fixed.acidity +volatile.acidity  + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide  + pH + sulphates + alcohol))
+```
+#finally we can remove total.sulfur.dioxide because of its higher correlation with free.sulfur dioxide and its larger vif value
+```{r}
+vif(lm(formula = quality ~ fixed.acidity +volatile.acidity  + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide  + pH + sulphates + alcohol ))
+```
+#since everything is smaller than 2 we can keep the rest of the predictors
+#fit full model
+```{r}
+full_model = lm(formula = quality ~ fixed.acidity +volatile.acidity  + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide  + pH + sulphates + alcohol )
+
+```
+#diagnostic plots for the full model
+```{r}
+plot(full_model)
+plot(winequality$fixed.acidity, resid(full_model), main = "Residuals vs fixed acidity", ylab = "fixed acidity",xlab= "residuals")
+plot(winequality$volatile.acidity, resid(full_model), main = "Residuals vs volatile acidity", ylab = "volatile acidity",xlab= "residuals")
+plot(winequality$citric.acid, resid(full_model), main = "Residuals vs citric acid", ylab = "citric acid",xlab= "residuals")
+plot
+plot(winequality$chlorides, resid(full_model), main = "Residuals vs chlorides", ylab = "chlorides",xlab= "residuals")
+plot(winequality$free.sulfur.dioxide, resid(full_model), main = "Residuals vs free sulfur dioxide", ylab = "free sulfur dioxide",xlab= "residuals")
+plot(winequality$pH, resid(full_model), main = "Residuals vs pH", ylab = "pH",xlab= "residuals")
+plot(winequality$sulphates, resid(full_model), main = "Residuals vs sulphates", ylab = "sulphates",xlab= "residuals")
+plot(winequality$alcohol, resid(full_model), main = "Residuals vs alcohol", ylab = "alcohol",xlab= "residuals")
+```
+#The residual plot has a horizontal band around the 0 line, with no discernable pattern in the plot. Thus we satisfy the Linearity and Equal Variane LINE conditions.
+#stepwise regression
+#use log of free sulfur dioxide chlorides and sulphates to normalize the data
+
+```{r}
+library(Rcmdr)
+mod0 = lm(quality~.)
+mod.upper = lm(formula = quality ~ fixed.acidity +volatile.acidity  + citric.acid + residual.sugar + log(chlorides) + log(free.sulfur.dioxide)  + pH + log(sulphates) + alcohol )
+stepmodel = stepwise(mod0,scope=list(lower = mod0, upper = mod.upper))
+```
+```{r}
+anova(stepmodel)
+summary(stepmodel)
+```
+
+#since all of the values seem to have large F-values we will keep them
+```{r}
+library(olsrr)
+cooksd <- cooks.distance(mod.upper)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  # add labels
+```
+#testing the model without the influential points
+```{r}
+winequality.no.outlier = winequality[-c(653),]
+mod0 = lm(quality~1,data = winequality.no.outlier)
+mod.upper = lm(formula = quality ~ fixed.acidity +volatile.acidity  + citric.acid + residual.sugar + log(chlorides) + log(free.sulfur.dioxide)  + pH + log(sulphates) + alcohol , data = winequality.no.outlier)
+stepmodel = step(mod0,scope=list(lower = mod0, upper = mod.upper))
+```
+
+```{r}
+cooksd <- cooks.distance(mod.upper)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  # add labels
+```
+
+```{r}
+summary(mod.upper)
+```
+
+#testing the regression model
+```{r}
+set.seed(27)
+rows = sample(nrow(winequality))
+shuffle_winequality = winequality[rows, ]
+testing = shuffle_winequality[1:1000,]
+```
+#test the number correct
+```{r}
+correct = 0
+total = 1000
+for(i in 1:1000){
+ if(testing[i,]$quality == round(1.331817 + (0.354809*(testing[i,]$alcohol)) + (-1.365576*testing[i,]$volatile.acidity) + (log(testing[i,]$sulphates)     *0.382366) + (log(testing[i,]$free.sulfur.dioxide)*0.124498 )+(testing[i,]$residual.sugar * 0.017083 )+(testing[i,]$pH*0.237243)+(testing[i,]$fixed.acidity*0.042343)+(testing[i,]$citric.acid * -0.250106) )){
+   correct = correct + 1
+}
+}
+testing[1,]$alcohol
+print(correct)
+print(correct/total)
+```
+#Therefore our model has about 54% accuracy which is much more accurate than a random guess (10%)
+```{r}
+correct = 0
+total = 1000
+for(i in 1:1000){
+ if(testing[i,]$quality == round(1.234678 + (0.354598*(testing[i,]$alcohol)) + (-1.354607*testing[i,]$volatile.acidity) + (log(testing[i,]$sulphates)     *0.388967) + (log(testing[i,]$free.sulfur.dioxide)*0.125422 )+(testing[i,]$residual.sugar * 0.017203 )+(testing[i,]$pH*0.243014)+(testing[i,]$fixed.acidity*0.046388)+(testing[i,]$citric.acid * -0.250998) )){
+   correct = correct + 1
+}
+}
+testing[1,]$alcohol
+print(correct)
+print(correct/total)
+```
+
+
+```{r}
+library(corrgram)
+corrgram(winequality, lower.panel=panel.shade, upper.panel=panel.ellipse)
+```
+
+```{r}
+plot(mod.upper)
+plot(winequality.no.outlier$fixed.acidity, resid(mod.upper), main = "Residuals vs fixed acidity", ylab = "fixed acidity",xlab= "residuals")
+plot(winequality.no.outlier$volatile.acidity, resid(mod.upper), main = "Residuals vs volatile acidity", ylab = "volatile acidity",xlab= "residuals")
+plot(winequality.no.outlier$citric.acid, resid(mod.upper), main = "Residuals vs citric acid", ylab = "citric acid",xlab= "residuals")
+plot
+plot(winequality.no.outlier$chlorides, resid(mod.upper), main = "Residuals vs chlorides", ylab = "chlorides",xlab= "residuals")
+plot(winequality.no.outlier$free.sulfur.dioxide, resid(mod.upper), main = "Residuals vs free sulfur dioxide", ylab = "free sulfur dioxide",xlab= "residuals")
+plot(winequality.no.outlier$pH, resid(mod.upper), main = "Residuals vs pH", ylab = "pH",xlab= "residuals")
+plot(winequality.no.outlier$sulphates, resid(mod.upper), main = "Residuals vs sulphates", ylab = "sulphates",xlab= "residuals")
+plot(winequality.no.outlier$alcohol, resid(mod.upper), main = "Residuals vs alcohol", ylab = "alcohol",xlab= "residuals")
+```
+```{r}
+anova(mod.upper)
+```
+```{r}
+mod.upper2 = lm(formula = quality ~ fixed.acidity +volatile.acidity + residual.sugar + log(chlorides) + log(free.sulfur.dioxide)  + pH + log(sulphates) + alcohol , data = winequality.no.outlier)
+anova(mod.upper2)
+plot(mod.upper2)
+```
+```{r}
+res<-t.test(winequality.red$quality,winequality.white$quality)
+res
+```
+
